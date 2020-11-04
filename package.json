@@ -1,0 +1,27 @@
+{
+  "name": "eth_tx_sender",
+  "version": "0.1.0",
+  "description": "utility for automating the sending of transactions to the Ethereum blockchain, with the possibility of subsequent modification and tracking the status, without time limit",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexeySalyk/eth_tx_sender.git"
+  },
+  "keywords": [
+    "ether",
+    "ethereum",
+    "eth",
+    "ethereum",
+    "transactions",
+    "web3"
+  ],
+  "author": "Alexey Saliuk",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/AlexeySalyk/eth_tx_sender/issues"
+  },
+  "homepage": "https://github.com/AlexeySalyk/eth_tx_sender#readme"
+}
