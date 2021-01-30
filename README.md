@@ -14,7 +14,10 @@ npm install eth_tx_sender
 
 ```js
 const TxSender = require('eth_tx_sender');
-txSender.SendTx({to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',amount: 'full', privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'})
+txSender.SendTx({to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',amount: 'full', privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'});
+
+//or
+txSender.SendTx({to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',amount: 'full', privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'}).wait().then(console.log, console.log);
 
 ```
 

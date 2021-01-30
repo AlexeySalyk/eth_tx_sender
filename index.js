@@ -4,6 +4,7 @@ const Tx = require('ethereumjs-tx').Transaction;
 var web3 = null;
 var defaultChain = null;
 var gasPriceStep = 10; //percent
+var startGasPrice = null;
 
 /**
  * Initialize Transaction sender
@@ -11,7 +12,8 @@ var gasPriceStep = 10; //percent
  * @param {Object} param.web3 already initialized web3 library [optional]
  * @param {string} param.web3Provider default 'http://localhost:8545'
  * @param {string} param.chain default mainnet
- * @param {string} param.gasPriceStep gas price multiplier (used when speeding up the transaction), by default 10%
+ * @param {Number} param.gasPriceStep gas price multiplier (used when speeding up the transaction), by default 10%
+ * @param {Number} param.startGasPrice tx gas price, default null.
  */
 function init(param = {}) {
     if (param.web3) {
@@ -22,6 +24,7 @@ function init(param = {}) {
     if (param.web3Provider) web3.setProvider(new web3.providers.HttpProvider(param.web3Provider));
     if (param.chain) defaultChain = param.chain;
     if (param.gasPriceStep) gasPriceStep = param.gasPriceStep;
+    if (param.startGasPrice) startGasPrice = param.startGasPrice;
 }
 
 function checkWeb3Initialization() {
@@ -119,12 +122,12 @@ class Transaction {
         to: null,
         amount: 0,
         msgData: '0x',
-        gasPrice: null,
+        gasPrice: startGasPrice,
         gasEstimate: null,
         nonce: 'latest',
         privateKey: null,
         senderAddress: null,
-        chain: defaultChain ?? null,
+        chain: defaultChain,
         boostInterval: 0
     }
 
