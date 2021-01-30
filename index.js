@@ -392,7 +392,7 @@ class Transaction {
 module.exports = {
     Transaction: Transaction,
     init: init,
-    web3: web3,
+    web3: () => { return web3; },
     sendTx: sendTx,
     sendERC20: sendERC20,
     checkHash: checkTxHash,
