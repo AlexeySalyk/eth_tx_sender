@@ -96,10 +96,10 @@ async function checkTxHash(hash, callback = null) {
             else if (!tx.blockNumber) resolve({ result: 'pending' });
             else {
                 let result = { result: 'mined' };
-                web3.eth.getTransactionReceipt(hash, (err, reciept) => {
+                web3.eth.getTransactionReceipt(hash, (err, receipt) => {
                     if (err) reject(err.message);
                     else {
-                        result.reciept = reciept;
+                        result.receipt = receipt;
                         resolve(result);
                     }
                 });
@@ -258,7 +258,7 @@ class Transaction {
         // mToDo events
         // .on('transactionHash', stampInfo)
         // .on('receipt', e => { log('tx receipt:', e.transactionHash); resolve(e) })
-        // //.on('confirmation', (confNum, rec) => { console.log('reciept tx', rec.transactionHash, " num of confirmations", confNum) })
+        // //.on('confirmation', (confNum, rec) => { console.log('receipt tx', rec.transactionHash, " num of confirmations", confNum) })
         // .on('error', err => { stampError(err.message); reject(err); });
 
     }
