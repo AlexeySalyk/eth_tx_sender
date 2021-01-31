@@ -100,6 +100,7 @@ async function checkTxHash(hash, callback = null) {
                     if (err) reject(err.message);
                     else {
                         result.receipt = receipt;
+                        result.receipt.nonce = tx.nonce;
                         resolve(result);
                     }
                 });
@@ -211,10 +212,20 @@ class Transaction {
         if (!this.txData.gasPrice) await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
         if (this.txData.nonce == 'latest') await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest').then(txQty => { this.txData.nonce = txQty; });
         else if (this.txData.nonce == 'pending') await web3.eth.getTransactionCount(this.txData.senderAddress, 'pending').then(txQty => { this.txData.nonce = txQty; });
-        if (!this.txData.gasEstimate) { await web3.eth.estimateGas({ from: this.txData.senderAddress, to: this.txData.to, value: (this.txData.amount == 'all' || this.txData.amount == 'full') ? 0 : this.txData.amount, gasPrice: this.txData.gasPrice, data: this.txData.msgData }).then(res => { this.txData.gasEstimate = res; }, err => { throw new Error("error in gas calc: " + err); }); }
-        if (this.txData.amount == 'all' || this.txData.amount == 'full') await web3.eth.getBalance(this.txData.senderAddress, 'latest').then(bal => { this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)))) });
-        else if (!web3.utils.isBigNumber(this.txData.amount)) this.txData.amount = web3.utils.toBN(this.txData.amount);
         if (!this.txData.chain) await web3.eth.net.getNetworkType().then(name => { if (name != 'main') this.txData.chain = name; });
+        //Gas calc
+        if (this.txData.amount != 'all' && this.txData.amount != 'full' && !web3.utils.isBigNumber(this.txData.amount)) this.txData.amount = web3.utils.toBN(this.txData.amount); //before gas calc
+        if (!this.txData.gasEstimate) {
+            await web3.eth.estimateGas({
+                from: this.txData.senderAddress,
+                to: this.txData.to,
+                value: (this.txData.amount == 'all' || this.txData.amount == 'full') ? 0 : this.txData.amount,
+                gasPrice: this.txData.gasPrice, data: this.txData.msgData
+            }).then(res => { this.txData.gasEstimate = res; }, err => { throw new Error("error in gas calc: " + err); });
+        }
+        if (this.txData.amount == 'all' || this.txData.amount == 'full') await web3.eth.getBalance(this.txData.senderAddress, 'latest').then(bal => { this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)))) });
+     
+
 
         let rawTx = {
             nonce: this.txData.nonce,
