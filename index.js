@@ -98,9 +98,11 @@ async function checkTxHash(hash, callback = null) {
                 let result = { result: 'mined' };
                 web3.eth.getTransactionReceipt(hash, (err, receipt) => {
                     if (err) reject(err.message);
+                    if (!receipt) resolve({ result: 'receipt not ready' });
                     else {
                         result.receipt = receipt;
                         result.receipt.nonce = tx.nonce;
+                        result.feePaid = receipt.gasUsed * tx.gasPrice
                         resolve(result);
                     }
                 });
@@ -224,7 +226,7 @@ class Transaction {
             }).then(res => { this.txData.gasEstimate = res; }, err => { throw new Error("error in gas calc: " + err); });
         }
         if (this.txData.amount == 'all' || this.txData.amount == 'full') await web3.eth.getBalance(this.txData.senderAddress, 'latest').then(bal => { this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)))) });
-     
+
 
 
         let rawTx = {
@@ -245,6 +247,7 @@ class Transaction {
         tx.sign(_privateKey);
         let serializedTx = tx.serialize();
 
+        let boostTimeout = null;
         web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'), (error, hash) => {
             if (error) {
                 this.errors.push(error);
@@ -253,7 +256,7 @@ class Transaction {
                 this.hash.push(hash);
                 if (this.txData.boostInterval > 0 && typeof this.boosting === 'undefined') {
                     this.boosting = async () => {
-                        setTimeout(async () => {
+                        boostTimeout = setTimeout(async () => {
                             if (await this.boost()) this.boosting();
                         }, this.txData.boostInterval * 1000);
                     }
@@ -262,7 +265,10 @@ class Transaction {
             }
             lock.unlock();
 
-        }).then(res => { console.log('tx id:', this.txData.id, 'sending done'/*, res*/); }, err => { console.log('tx id:', this.txData.id, 'sending error:', err.message); });
+        }).then(res => {
+            console.log('tx id:', this.txData.id, 'sending done'/*, res*/);
+            if (this.boosting) clearTimeout(boostTimeout);
+        }, err => { console.log('tx id:', this.txData.id, 'sending error:', err.message); });
         // If the transaction has not been mined within 750 seconds, an error is returned: 
         // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
 
