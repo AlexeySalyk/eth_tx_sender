@@ -238,7 +238,7 @@ class Transaction {
             gasLimit: this.txData.gasEstimate
         }
 
-        console.log('sending tx id:' + this.txData.id, rawTx);
+        console.log('sending tx id:' + this.txData.id, rawTx, 'amount:', web3.utils.fromWei(rawTx.value));
 
         let tx = this.txData.chain ? new Tx(rawTx, { 'chain': this.txData.chain }) : new Tx(rawTx);
         let _privateKey = Buffer.from(this.txData.privateKey.slice(2), 'hex');
