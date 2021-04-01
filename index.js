@@ -295,14 +295,18 @@ class Transaction {
             console.log('checking tx id:', this.txData.id);
             let i = 0;
             for await (const hash of this.hash) {
-                let res = await checkTxHash(hash);
-                if (res) {
-                    console.log(i++, hash, res.result);
-                    if (res.result == 'mined') {
-                        resolve(res);
-                        this.checkPromise = null;
-                        return;
+                try {
+                    let res = await checkTxHash(hash);
+                    if (res) {
+                        console.log(i++, hash, res.result);
+                        if (res.result == 'mined') {
+                            resolve(res);
+                            this.checkPromise = null;
+                            return;
+                        }
                     }
+                } catch (error) {
+                    reject(error);
                 }
             }
             resolve(false);
@@ -381,7 +385,9 @@ class Transaction {
                             else resolve(res);
                         },
                         rej => {
-                            console.log('tx id:', this.txData.id, 'monit error:', rej); reject(rej)
+                            console.log('tx id:', this.txData.id, 'monit error:', rej); 
+                            //reject(rej);
+                            checkState();
                         });
                 }, interval * 1000);
             }
