@@ -1,6 +1,6 @@
 {
   "name": "eth_tx_sender",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "utility for automating the sending of transactions to the Ethereum blockchain, with the possibility of subsequent modification and tracking the status, without time limit",
   "main": "index.js",
   "scripts": {
@@ -26,6 +26,7 @@
   "homepage": "https://github.com/AlexeySalyk/eth_tx_sender#readme",
   "dependencies": {
     "eth_account": "^1.0.1",
-    "web3": "^1.3.3"
+    "web3": "~1.4.0",
+    "ethereumjs-tx": "~2.1.2"
   }
 }

@@ -1,8 +1,10 @@
 const Web3 = require('web3');
 const Tx = require('ethereumjs-tx').Transaction;
+let Common = require('@ethereumjs/common').default;
+const chains = require('./chains');
 
 var web3 = null;
-var defaultChain = null;
+var defaultChain = 'mainnet';
 var gasPriceStep = 10; //percent
 var startGasPrice = null;
 
@@ -11,7 +13,7 @@ var startGasPrice = null;
  * @param {Object} param default params
  * @param {Object} param.web3 already initialized web3 library [optional]
  * @param {string} param.web3Provider default 'http://localhost:8545'
- * @param {string} param.chain default mainnet
+ * @param {string} param.chain (ropsten/mainnet or chain short name from https://chainid.network/)  default mainnet 
  * @param {Number} param.gasPriceStep gas price multiplier (used when speeding up the transaction), by default 10%
  * @param {Number} param.startGasPrice tx gas price, default null.
  */
@@ -44,7 +46,7 @@ function checkWeb3Initialization() {
     * @param {*} param.nonce pending, latest can be accepted
     * @param {string} param.privateKey 0x...
     * @param {string} param.senderAddress 0x... Be careful inside there is no check for correspondence of the private key to the account!!!
-    * @param {string} param.chain  (ropsten/mainnet) default mainnet or defaultChain before passed
+    * @param {string} param.chain  (ropsten/mainnet or chain short name from https://chainid.network/) default mainnet or defaultChain before passed
     * @param {Account} param.account account object in proprietary format (https://www.npmjs.com/package/eth_account)
     * @param {Number} param.boostInterval boost interval in seconds, default 0 (auto forcing disabled)
     * @returns {object} transaction object
@@ -68,7 +70,7 @@ function sendTx(param) {
     * @param {*} param.nonce pending, latest can be accepted
     * @param {string} param.privateKey 0x...
     * @param {string} param.senderAddress 0x... Be careful inside there is no check for correspondence of the private key to the account!!!
-    * @param {string} param.chain  (ropsten/mainnet) default mainnet or defaultChain before passed
+    * @param {string} param.chain  (ropsten/mainnet or chain short name from https://chainid.network/)  default mainnet or defaultChain before passed
     * @param {Account} param.account account object in proprietary format (https://www.npmjs.com/package/eth_account)
     * @param {Number} param.boostInterval boost interval in seconds, default 0 (auto forcing disabled)
     * @returns {object} transaction object
@@ -150,7 +152,7 @@ class Transaction {
     * @param {*} param.nonce pending, latest can be accepted
     * @param {string} param.privateKey 0x...
     * @param {string} param.senderAddress 0x... Be careful inside there is no check for correspondence of the private key to the account!!!
-    * @param {string} param.chain  (ropsten/mainnet) 
+    * @param {string} param.chain  (ropsten/mainnet or chain short name from https://chainid.network/) If not set, takes the default.
     * @param {Number} param.boostInterval boost interval in seconds, default 0 (auto forcing disabled)
     * @param {Account} param.account account object in proprietary format (https://www.npmjs.com/package/eth_account)
     */
@@ -214,7 +216,7 @@ class Transaction {
         if (!this.txData.gasPrice) await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
         if (this.txData.nonce == 'latest') await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest').then(txQty => { this.txData.nonce = txQty; });
         else if (this.txData.nonce == 'pending') await web3.eth.getTransactionCount(this.txData.senderAddress, 'pending').then(txQty => { this.txData.nonce = txQty; });
-        if (!this.txData.chain) await web3.eth.net.getNetworkType().then(name => { if (name != 'main') this.txData.chain = name; });
+        //if (!this.txData.chain) await web3.eth.net.getNetworkType().then(name => { if (name != 'main') this.txData.chain = name; });
         //Gas calc
         if (this.txData.amount != 'all' && this.txData.amount != 'full' && !web3.utils.isBigNumber(this.txData.amount)) this.txData.amount = web3.utils.toBN(this.txData.amount); //before gas calc
         if (!this.txData.gasEstimate) {
@@ -240,10 +242,27 @@ class Transaction {
 
         console.log('sending tx id:' + this.txData.id, rawTx, 'amount:', web3.utils.fromWei(rawTx.value));
 
-        let tx = this.txData.chain ? new Tx(rawTx, { 'chain': this.txData.chain }) : new Tx(rawTx);
+        //chain
+        let chainID = 0;
+        //let network = this.txData.chain;
+        switch (this.txData.chain ?? defaultChain) {
+            case 'mainnet': chainID = 1; break;
+            case 'ropsten': chainID = 3; break;
+            default:
+                chains.forEach(element => {
+                    if (element.shortName == this.txData.chain) {
+                        chainID = element.chainId;
+                        //network = element.network;
+                    }
+                });
+                if (chainID == 0) throw new Error('chain not found');
+                break;
+        }
+
+        var common = Common.forCustomChain('mainnet', { chainId: chainID });
+        let tx = new Tx(rawTx, { common });
+
         let _privateKey = Buffer.from(this.txData.privateKey.slice(2), 'hex');
-
-
         tx.sign(_privateKey);
         let serializedTx = tx.serialize();
 
@@ -385,7 +404,7 @@ class Transaction {
                             else resolve(res);
                         },
                         rej => {
-                            console.log('tx id:', this.txData.id, 'monit error:', rej); 
+                            console.log('tx id:', this.txData.id, 'monit error:', rej);
                             //reject(rej);
                             checkState();
                         });
