@@ -7,6 +7,7 @@ var web3 = null;
 var defaultChain = 'mainnet';
 var gasPriceStep = 10; //percent
 var startGasPrice = null;
+var dontRetryFailedTx = false;
 
 /**
  * Initialize Transaction sender
@@ -16,6 +17,7 @@ var startGasPrice = null;
  * @param {string} param.chain (ropsten/mainnet or chain short name from https://chainid.network/)  default mainnet 
  * @param {Number} param.gasPriceStep gas price multiplier (used when speeding up the transaction), by default 10%
  * @param {Number} param.startGasPrice tx gas price, default null.
+ * @param {Boolean} param.dontRetryFailedTx do not resend transaction refused by RPC, default false.
  */
 function init(param = {}) {
     if (param.web3) {
@@ -220,12 +222,28 @@ class Transaction {
         //Gas calc
         if (this.txData.amount != 'all' && this.txData.amount != 'full' && !web3.utils.isBigNumber(this.txData.amount)) this.txData.amount = web3.utils.toBN(this.txData.amount); //before gas calc
         if (!this.txData.gasEstimate) {
-            await web3.eth.estimateGas({
+            let gasCalcOk = await web3.eth.estimateGas({
                 from: this.txData.senderAddress,
                 to: this.txData.to,
                 value: (this.txData.amount == 'all' || this.txData.amount == 'full') ? 0 : this.txData.amount,
-                gasPrice: this.txData.gasPrice, data: this.txData.msgData
-            }).then(res => { this.txData.gasEstimate = res; }, err => { throw new Error("error in gas calc: " + err); });
+                gasPrice: this.txData.gasPrice,
+                data: this.txData.msgData
+            }).then(
+                res => { this.txData.gasEstimate = res; },
+                err => { console.error('calc gas error:\n' + err + '\ntry to calc without gasPrice...'); }
+            );
+
+            if (!gasCalcOk) {
+                await web3.eth.estimateGas({
+                    from: this.txData.senderAddress,
+                    to: this.txData.to,
+                    value: (this.txData.amount == 'all' || this.txData.amount == 'full') ? 0 : this.txData.amount,
+                    data: this.txData.msgData
+                }).then(
+                    res => { this.txData.gasEstimate = res; },
+                    err => { throw new Error("error in gas calc: " + err); }
+                );
+            }
         }
         if (this.txData.amount == 'all' || this.txData.amount == 'full') await web3.eth.getBalance(this.txData.senderAddress, 'latest').then(bal => { this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)))) });
 
@@ -267,10 +285,13 @@ class Transaction {
         let serializedTx = tx.serialize();
 
         let boostTimeout = null;
+
+        //var sendToNode = () => {
         web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'), (error, hash) => {
             if (error) {
                 this.errors.push(error);
                 console.error('tx id:', this.txData.id, error.message ?? error, 'sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+                //            if (!dontRetryFailedTx) setTimeout(sendTonode, 10000);
             } else {
                 this.hash.push(hash);
                 if (this.txData.boostInterval > 0 && typeof this.boosting === 'undefined') {
@@ -288,6 +309,9 @@ class Transaction {
             console.log('tx id:', this.txData.id, 'sending done'/*, res*/);
             if (this.boosting) clearTimeout(boostTimeout);
         }, err => { console.log('tx id:', this.txData.id, 'sending error:', err.message); });
+        // }
+        // sendTonode();
+
         // If the transaction has not been mined within 750 seconds, an error is returned: 
         // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
 
