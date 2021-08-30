@@ -43,7 +43,7 @@ function checkWeb3Initialization() {
     * @param {string} param.to tx destination 
     * @param {*} param.amount transfer amount, full/all can be accepted
     * @param {string} param.msgData default 0x (empty value)
-    * @param {*} param.gasPrice
+    * @param {*} param.gasPrice if null using startGasPrice, "auto" for RPC value 
     * @param {Number} param.gasEstimate
     * @param {*} param.nonce pending, latest can be accepted
     * @param {string} param.privateKey 0x...
@@ -149,7 +149,7 @@ class Transaction {
     * @param {string} param.to tx destination 
     * @param {*} param.amount transfer amount, full/all can be accepted
     * @param {string} param.msgData default 0x (empty value)
-    * @param {*} param.gasPrice
+    * @param {*} param.gasPrice if null using startGasPrice, "auto" for RPC value 
     * @param {Number} param.gasEstimate
     * @param {*} param.nonce pending, latest can be accepted
     * @param {string} param.privateKey 0x...
@@ -215,7 +215,7 @@ class Transaction {
     send = async function () {
 
         let lock = await this.lockControl();
-        if (!this.txData.gasPrice) await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
+        if (!this.txData.gasPrice || this.txData.gasPrice == 'auto') await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
         if (this.txData.nonce == 'latest') await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest').then(txQty => { this.txData.nonce = txQty; });
         else if (this.txData.nonce == 'pending') await web3.eth.getTransactionCount(this.txData.senderAddress, 'pending').then(txQty => { this.txData.nonce = txQty; });
         //if (!this.txData.chain) await web3.eth.net.getNetworkType().then(name => { if (name != 'main') this.txData.chain = name; });
