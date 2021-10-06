@@ -175,7 +175,8 @@ class Transaction {
         if (this.txData.to && !web3.utils.isAddress(this.txData.to)) throw new Error("incorrect 'to:' address: " + this.txData.to);
         if (!this.txData.privateKey || this.txData.privateKey.length != 66) throw new Error("incorrect private key: " + this.txData.privateKey);
         if (!this.txData.senderAddress) this.txData.senderAddress = web3.eth.accounts.privateKeyToAccount(this.txData.privateKey).address;
-        if (this.txData.gasEstimate && typeof this.txData.gasEstimate !== 'number') throw new Error('gas estimate not a number');
+        if (this.txData.gasEstimate && typeof this.txData.gasEstimate !== 'number') throw new Error('gas estimate is not a number');
+        if (this.txData.gasEstimate && (this.txData.gasEstimate != "auto" && typeof this.txData.gasEstimate !== 'number')) throw new Error('gas estimate is not a number');
         if (this.txData.nonce != 'latest' && (this.txData.amount == 'full' || this.txData.amount == 'all')) throw new Error('Unable to send full balance with a "pending" nonce, only "latest" can be accepted');
     }
 
