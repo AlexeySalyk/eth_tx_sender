@@ -443,7 +443,7 @@ class Transaction {
         let lock = await this.lockControl();
 
         if (amount == 'all' || amount == 'full') await web3.eth.call({ to: token, data: "0x70a08231" + "000000000000000000000000" + this.txData.senderAddress.slice(2) }).then(res => { amount = res; });
-        else amount = web3.utils.padLeft(web3.utils.toHex(amount), 32);
+        else amount = web3.utils.padLeft(web3.utils.toHex(amount), 64);
 
         this.txData.to = token;
         this.txData.msgData = "0xa9059cbb" + "000000000000000000000000" + to.slice(2) + amount.slice(2);
