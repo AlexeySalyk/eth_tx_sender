@@ -84,6 +84,13 @@ function sendERC20(param) {
     return tx;
 }
 
+async function sendTxAsync(param) {
+    init();
+    let tx = new Transaction(param);
+    await tx.send();
+    return tx;
+}
+
 /**
  * Checking a transaction by hash
  * @param {String} hash 
@@ -461,6 +468,7 @@ module.exports = {
     init: init,
     web3: () => { return web3; },
     sendTx: sendTx,
+    sendTxAsync: sendTxAsync,
     sendERC20: sendERC20,
     checkHash: checkTxHash,
 };
