@@ -12,20 +12,26 @@ npm install eth_tx_sender
 
 ## Usage
 
+### Simle usage (using default RPC setings)
 ```js
 const TxSender = require('eth_tx_sender');
 
-//Simle usage
 txSender.SendTx({to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',amount: 'full', privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'});
-//or
+//or with promise return
 txSender.SendTx({to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',amount: 'full', privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'}).wait().then(console.log, console.log);
-//ERC20
+
+//ERC20 transfer
 TxSender.sendERC20({
     to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',
     amount:'full',
     privateKey:"0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
     token:'0xdac17f958d2ee523a2206206994597c13d831ec7'
 });
+```
+
+### Specify RPC settings
+```js
+const TxSender = require('eth_tx_sender');
 
 //test network
 txSender.init( {
@@ -33,7 +39,6 @@ txSender.init( {
     chain: 'ropsten',
     startGasPrice: 1*1000000000
 });
-txSender.SendTx({to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',amount: 'full', privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'});
 
 //BSC test network
 sender.init( {
@@ -41,7 +46,15 @@ sender.init( {
     chain: 'bnbt',
     startGasPrice: 10*1000000000
 });
+
+//Send transaction
 txSender.SendTx({to:'0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',amount: 'full', privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'});
+```
+
+### Extract web3 library
+```js
+const TxSender = require('eth_tx_sender');
+let web3 = TxSender.web3();
 ```
 
 ## License
