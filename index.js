@@ -223,7 +223,7 @@ class Transaction {
     send = async function () {
 
         let lock = await this.lockControl();
-        if (!this.txData.gasPrice || this.txData.gasPrice == 'auto') await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
+        if (!Number.isInteger(this.txData.gasPrice) || this.txData.gasPrice == 'auto') await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
         if (this.txData.nonce == 'latest') await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest').then(txQty => { this.txData.nonce = txQty; });
         else if (this.txData.nonce == 'pending') await web3.eth.getTransactionCount(this.txData.senderAddress, 'pending').then(txQty => { this.txData.nonce = txQty; });
         //if (!this.txData.chain) await web3.eth.net.getNetworkType().then(name => { if (name != 'main') this.txData.chain = name; });
@@ -270,8 +270,8 @@ class Transaction {
 
         //chain
         let chainID = 0;
-        //let network = this.txData.chain;
-        switch (this.txData.chain ?? defaultChain) {
+        let cahinName = this.txData.chain ?? defaultChain;
+        switch (cahinName) {
             case 'mainnet': chainID = 1; break;
             case 'ropsten': chainID = 3; break;
             default:
@@ -281,7 +281,10 @@ class Transaction {
                         //network = element.network;
                     }
                 });
-                if (chainID == 0) throw new Error('chain not found');
+                if (chainID == 0) {
+                    if (Number.isInteger(cahinName)) chainID = cahinName;
+                    else throw new Error('chain not found');
+                }
                 break;
         }
 
