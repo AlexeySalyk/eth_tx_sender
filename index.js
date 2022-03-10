@@ -449,6 +449,24 @@ class Transaction {
         });
     }
 
+    /**
+    * track the status of a transaction
+    * @param {Number} interval check interval in seconds
+    * @returns {Promise} waits until tx will be mined and returns the transaction result or promise reject in case of incident
+    */
+    waitFirstHash = async function (interval = 15) {
+        return new Promise((resolve, reject) => {
+            let checkHash = async () => {
+                setTimeout(() => {
+                    if(this.hash.length)resolve(this.hash[0]);
+                    else if(this.errors.length) reject(this.errors[0]);
+                    else checkHash();
+                }, interval * 1000);
+            }
+            checkHash();
+        });
+    }
+
     sendERC20 = async (token, to, amount) => {
         let lock = await this.lockControl();
 
