@@ -210,18 +210,18 @@ class Transaction {
         if (!onlyWait) this.queue.push(true);
 
         return new Promise(resolve => {
-            let check = () => {
+            let lockCheck = () => {
                 for (let i = 0; i < (onlyWait ? this.queue.length : myQueue); i++) {
                     if (this.queue[i]) {
                         setTimeout(() => {
-                            check();
+                            lockCheck();
                         }, 100);
                         return;
                     };
                 }
                 resolve({ unlock: () => { this.queue[myQueue] = false } });
             }
-            check();
+            lockCheck();
         });
     };
 
@@ -340,20 +340,21 @@ class Transaction {
                 return;
             }
             console.log('checking tx id:', this.txData.id);
-            let i = 0;
-            for await (const hash of this.hash) {
+            for (let i = (this.hash.length - 1); i >= 0; i--) {
                 try {
-                    let res = await checkTxHash(hash);
+                    let res = await checkTxHash(this.hash[i]);
                     if (res) {
-                        console.log(i++, hash, res.result);
+                        console.log(i, this.hash[i], res.result);
                         if (res.result == 'mined') {
                             resolve(res);
                             this.checkPromise = null;
                             return;
+                        } else if (res.result == 'pending') {
+                            break; // reduce RPC calls
                         }
                     }
                 } catch (error) {
-                    reject(error);
+                    return reject(error);
                 }
             }
             resolve(false);
