@@ -3,11 +3,12 @@ const Tx = require('ethereumjs-tx').Transaction;
 let Common = require('@ethereumjs/common').default;
 const chains = require('./chains');
 
-var web3 = null;
-var defaultChain = 'mainnet';
-var gasPriceStep = 10; //percent
-var startGasPrice = null;
-var dontRetryFailedTx = false;
+let web3 = null;
+let defaultChain = 'mainnet';
+let gasPriceStep = 10; //percent
+let startGasPrice = null;
+let dontRetryFailedTx = false;
+let boostInterval = 0;
 
 /**
  * Initialize Transaction sender
@@ -29,6 +30,7 @@ function init(param = {}) {
     if (param.chain) defaultChain = param.chain;
     if (param.gasPriceStep) gasPriceStep = param.gasPriceStep;
     if (param.startGasPrice) startGasPrice = param.startGasPrice;
+    if (param.boostInterval) boostInterval = param.boostInterval;
 }
 
 function checkWeb3Initialization() {
@@ -56,7 +58,9 @@ function checkWeb3Initialization() {
 function sendTx(param) {
     init();
     let tx = new Transaction(param);
-    tx.send();
+    tx.send().then(() => {
+        if (tx.txData.boostInterval > 0) tx.boosting();
+    });
     return tx;
 }
 
@@ -88,6 +92,7 @@ async function sendTxAsync(param) {
     init();
     let tx = new Transaction(param);
     await tx.send();
+    if (tx.txData.boostInterval > 0) tx.boosting();
     return tx;
 }
 
@@ -142,12 +147,12 @@ class Transaction {
         privateKey: null,
         senderAddress: null,
         chain: defaultChain,
-        boostInterval: 0
+        boostInterval: boostInterval
     }
 
     hash = [];
     errors = [];
-
+    boostTimeout = null;
 
     /**
     * Create new transaction
@@ -188,7 +193,7 @@ class Transaction {
     }
 
     /**
-     * Blocks concurrent execution of code inside asynchronous functions, 
+     * Blocks concurrent execution of code inside asynchronous functions by waiting for lockControl initialization, 
      * returns a function via a promise that needs to be called to empty the queue
      * usage:
      * let lock = await this.lockControl();
@@ -273,7 +278,7 @@ class Transaction {
         let cahinName = this.txData.chain ?? defaultChain;
         switch (cahinName) {
             case 'mainnet': chainID = 1; break;
-            case 'ropsten': chainID = 3; break;
+            case 'goerli': chainID = 5; break;
             default:
                 chains.forEach(element => {
                     if (element.shortName == this.txData.chain) {
@@ -295,43 +300,26 @@ class Transaction {
         tx.sign(_privateKey);
         let serializedTx = tx.serialize();
 
-        let boostTimeout = null;
-
-        //var sendToNode = () => {
-        web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'), (error, hash) => {
-            if (error) {
+        // If the transaction has not been mined within 750 seconds (default timeout), an error is returned: 
+        // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
+        web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'))
+            .on('error', error => {
                 this.errors.push(error);
                 console.error('tx id:', this.txData.id, error.message ?? error, 'sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
-                //            if (!dontRetryFailedTx) setTimeout(sendTonode, 10000);
-            } else {
+                // if (!dontRetryFailedTx) setTimeout(sendTonode, 10000);
+                lock.unlock();
+            })
+            .on('transactionHash', hash => {
                 this.hash.push(hash);
-                if (this.txData.boostInterval > 0 && typeof this.boosting === 'undefined') {
-                    this.boosting = async () => {
-                        boostTimeout = setTimeout(async () => {
-                            if (await this.boost()) this.boosting();
-                        }, this.txData.boostInterval * 1000);
-                    }
-                    this.boosting();
-                }
-            }
-            lock.unlock();
-
-        }).then(res => {
-            console.log('tx id:', this.txData.id, 'sending done'/*, res*/);
-            if (this.boosting) clearTimeout(boostTimeout);
-        }, err => { console.log('tx id:', this.txData.id, 'sending error:', err.message); });
-        // }
-        // sendTonode();
-
-        // If the transaction has not been mined within 750 seconds, an error is returned: 
-        // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
-
-        // mToDo events
-        // .on('transactionHash', stampInfo)
-        // .on('receipt', e => { log('tx receipt:', e.transactionHash); resolve(e) })
-        // //.on('confirmation', (confNum, rec) => { console.log('receipt tx', rec.transactionHash, " num of confirmations", confNum) })
-        // .on('error', err => { stampError(err.message); reject(err); });
-
+                lock.unlock();
+            })
+            .once('receipt', receipt => {
+                console.log('tx id:', this.txData.id, 'sending done');
+                if (!this.hash.includes(receipt.transactionHash)) this.hash.push(receipt.transactionHash);
+                if (this.boostTimeout) clearTimeout(boostTimeout);
+                lock.unlock();
+            }).catch(console.error);
+        //.on('confirmation', (confNum, rec) => { console.log('receipt tx', rec.transactionHash, " num of confirmations", confNum) })
     }
 
     /**
@@ -390,38 +378,54 @@ class Transaction {
 
     /**
      * replace with the same transaction with a higher gas price
-     * @returns {Boolean} return false if the transaction does not need to be accelerated, and true if the acceleration was successful
+     * @returns {Promise} 'boosted' or 'mined depending on the result
      */
     boost = async function () {
-
         return new Promise(async (resolve, reject) => {
-            let lock = await this.lockControl();
-            let mined = await this.check();
-            if (mined) resolve(false /*'tx already mined'*/);
-            else {
-                if (!this.hash.length) reject('tx not yet created');
-                else {
-                    let nonce = await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest');
-                    if (nonce > this.txData.nonce) reject('tx nonce is incorrect');
-                    else if (nonce == this.txData.nonce) {
-                        console.log('boost tx id:', this.txData.id, 'hash', this.hash[this.hash.length - 1]);
-                        this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
-                        // check if balance is sufficent
-                        let bal = await web3.eth.getBalance(this.txData.senderAddress, 'latest');
-                        let fullAmount = this.txData.amount.add(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)));
-                        if (fullAmount.gt(web3.utils.toBN(bal))) {
-                            //toDo optional
-                            console.log('ATTENTION the transaction amount will be reduced!!!');
-                            this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate))));
-                        }
-                        this.send();
-                    }
-                    resolve(true);
+            //if (!this.hash.length) return reject('tx not yet created');
+            let lock = await this.lockControl();  // for not concurrent boosting
+            let mined = await this.check().catch(e => console.error('boost error', e));
+            if (mined) return resolve('mined');
+
+            let nonce = await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest');
+            if (nonce > this.txData.nonce) reject('tx nonce is incorrect is lower than the current nonce');
+            else if (nonce == this.txData.nonce) {
+                console.log('boost tx id:', this.txData.id, 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
+                this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
+                // check if balance is sufficent
+                let bal = await web3.eth.getBalance(this.txData.senderAddress, 'latest');
+                let fullAmount = this.txData.amount.add(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)));
+                if (fullAmount.gt(web3.utils.toBN(bal))) {
+                    //toDo optional
+                    console.log('ATTENTION the transaction amount will be reduced!!!');
+                    this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate))));
                 }
+                this.send();
             }
+            resolve('boosted');
+
             lock.unlock();
         });
+    }
 
+    /**
+     * start boosting TX (replace with the same transaction with a higher gas price)
+     * is simple recall boost() method until transaction will be mined
+     * @param {*} interval boost interval in seconds, default 0 (auto forcing disabled)
+     */
+    boosting = async (interval = 0) => {
+        if (interval) this.txData.boostInterval = interval;
+        if (this.txData.boostInterval > 0) {
+            this.boostTimeout = setTimeout(async () => {
+                let boostRes;
+                try {
+                    boostRes = await this.boost();
+                } catch (error) {
+                    console.error(this?.txData?.id, 'boosting error:', error);
+                }
+                if (boostRes != 'mined') this.boosting();
+            }, this.txData.boostInterval * 1000);
+        }
     }
 
     /**
@@ -458,8 +462,8 @@ class Transaction {
         return new Promise((resolve, reject) => {
             let checkHash = async () => {
                 setTimeout(() => {
-                    if(this.hash.length)resolve(this.hash[0]);
-                    else if(this.errors.length) reject(this.errors[0]);
+                    if (this.hash.length) resolve(this.hash[0]);
+                    else if (this.errors.length) reject(this.errors[0]);
                     else checkHash();
                 }, interval * 1000);
             }
@@ -478,8 +482,8 @@ class Transaction {
         this.txData.amount = 0;
         console.log(token, 'ERC20 transfer, from 0x' + this.txData.senderAddress, 'to:', to, 'amount:', web3.utils.fromWei(amount));
         this.send();
-
         lock.unlock();
+        if (this.txData.boostInterval > 0) this.boosting();
     }
 }
 
