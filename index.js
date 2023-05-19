@@ -9,6 +9,7 @@ let gasPriceStep = 10; //percent
 let startGasPrice = null;
 let dontRetryFailedTx = false;
 let boostInterval = 0;
+let calcHashAnyway = true;
 
 /**
  * Initialize Transaction sender
@@ -19,6 +20,7 @@ let boostInterval = 0;
  * @param {Number} param.gasPriceStep gas price multiplier (used when speeding up the transaction), by default 10%
  * @param {Number} param.startGasPrice tx gas price, default null.
  * @param {Boolean} param.dontRetryFailedTx do not resend transaction refused by RPC, default false.
+ * @param {Boolean} param.calcHashAnyway calculate tx hash even if tx refused by RPC, default true.
  */
 function init(param = {}) {
     if (param.web3) {
@@ -31,6 +33,8 @@ function init(param = {}) {
     if (param.gasPriceStep) gasPriceStep = param.gasPriceStep;
     if (param.startGasPrice) startGasPrice = param.startGasPrice;
     if (param.boostInterval) boostInterval = param.boostInterval;
+    if (param.dontRetryFailedTx) dontRetryFailedTx = param.dontRetryFailedTx;
+    if (param.calcHashAnyway != undefined) calcHashAnyway = param.calcHashAnyway;
 }
 
 function checkWeb3Initialization() {
@@ -305,7 +309,8 @@ class Transaction {
         web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'))
             .on('error', error => {
                 this.errors.push(error);
-                console.error('tx id:', this.txData.id, error.message ?? error, 'sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+                console.error('tx id:', this.txData.id, error.message ?? error, '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+                if (calcHashAnyway) this.hash.push(web3.utils.sha3('0x' + serializedTx.toString('hex')));
                 // if (!dontRetryFailedTx) setTimeout(sendTonode, 10000);
                 lock.unlock();
             })
@@ -318,7 +323,7 @@ class Transaction {
                 if (!this.hash.includes(receipt.transactionHash)) this.hash.push(receipt.transactionHash);
                 if (this.boostTimeout) clearTimeout(boostTimeout);
                 lock.unlock();
-            }).catch(console.error);
+            });//.catch((error) => console.error('tx id catched error:', this.txData.id, error.message ?? error, '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce));
         //.on('confirmation', (confNum, rec) => { console.log('receipt tx', rec.transactionHash, " num of confirmations", confNum) })
     }
 
