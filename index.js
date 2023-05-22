@@ -24,12 +24,43 @@ let calcHashAnyway = true;
  * @param {Boolean} param.calcHashAnyway calculate tx hash even if tx refused by RPC, default true.
  */
 function init(param = {}) {
-    if (param.web3) {
-        web3 = param.web3;
-        return;
+    if (param.web3) web3 = param.web3;
+    else {
+        if (!web3) web3 = new Web3('http://localhost:8545');
+        if (param.web3Provider) web3Provider = param.web3Provider;
+        if (param.web3Provider) {
+            if (param.web3Provider.startsWith('http://') || param.web3Provider.startsWith('https://')) {
+                web3.setProvider(new web3.providers.HttpProvider(param.web3Provider));
+            } else {
+                let provider = new Web3.providers.WebsocketProvider(param.web3Provider, {
+                    clientConfig: {
+                        keepalive: true,
+                        keepaliveInterval: 60000 // ms
+                    },
+                    reconnect: {
+                        auto: true,
+                        delay: 5000, // ms
+                        maxAttempts: 9999999999999999,
+                        onTimeout: true
+                    }
+                });
+                web3.setProvider(provider);
+
+                provider.on('error', e => {
+                    console.log('\nWS Error', e);
+                });
+                provider.on('end', e => {
+                    console.log('\nWS closed');
+                });
+                provider.on('connect', function () {
+                    console.log('\nWSS connected');
+                    web3.eth.isSyncing().then((res) => { console.log("isSyncing:", res); });
+                    web3.eth.getBlockNumber().then((res) => { console.log("lastBlock:", res) });
+                });
+            }
+        }
     }
-    if (!web3) web3 = new Web3('http://localhost:8545');
-    if (param.web3Provider) web3.setProvider(new web3.providers.HttpProvider(param.web3Provider));
+
     if (param.chain) defaultChain = param.chain;
     if (param.gasPriceStep) gasPriceStep = param.gasPriceStep;
     if (param.startGasPrice) startGasPrice = param.startGasPrice;
@@ -402,25 +433,30 @@ class Transaction {
         return new Promise(async (resolve, reject) => {
             //if (!this.hash.length) return reject('tx not yet created');
             let lock = await this.lockControl();  // for not concurrent boosting
-            let mined = await this.check().catch(e => console.error('boost error', e));
-            if (mined) return resolve('mined');
+            try {
+                let mined = await this.check();
+                if (mined) return resolve('mined');
 
-            let nonce = await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest');
-            if (nonce > this.txData.nonce) reject('tx nonce is incorrect is lower than the current nonce');
-            else if (nonce == this.txData.nonce) {
-                console.log('boost tx id:', this.txData.id, 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
-                this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
-                // check if balance is sufficent
-                let bal = await web3.eth.getBalance(this.txData.senderAddress, 'latest');
-                let fullAmount = this.txData.amount.add(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)));
-                if (fullAmount.gt(web3.utils.toBN(bal))) {
-                    //toDo optional
-                    console.log('ATTENTION the transaction amount will be reduced!!!');
-                    this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate))));
+                let nonce = await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest');
+                if (nonce > this.txData.nonce) reject('tx nonce is incorrect is lower than the current nonce');
+                else if (nonce == this.txData.nonce) {
+                    console.log('boost tx id:', this.txData.id, 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
+                    this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
+                    // check if balance is sufficent
+                    let bal = await web3.eth.getBalance(this.txData.senderAddress, 'latest');
+                    let fullAmount = this.txData.amount.add(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)));
+                    if (fullAmount.gt(web3.utils.toBN(bal))) {
+                        //toDo optional
+                        console.log('ATTENTION the transaction amount will be reduced!!!');
+                        this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate))));
+                    }
+                    this.send();
                 }
-                this.send();
+                resolve('boosted');
+            } catch (error) {
+                console.error('boost error', error);
+                reject('boost error', error);
             }
-            resolve('boosted');
 
             lock.unlock();
         });
