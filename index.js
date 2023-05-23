@@ -375,7 +375,9 @@ class Transaction {
      * @returns {Object} {result,receipt} result can be "not found", "pending", "mined" 
      */
     check = async function () {
+        //double check protection |  this.checkPromise = null in evry resolve/reject is important for correct work
         if (typeof this.checkPromise !== 'undefined' && this.checkPromise) return new Promise((res, rej) => { this.checkPromise.then(res, rej); });
+        //--------------------------------------------------------------------------------------------------------
         else this.checkPromise = new Promise(async (resolve, reject) => {
             if (this.hash.length == 0) {
                 reject('no hash');
@@ -397,7 +399,9 @@ class Transaction {
                         }
                     }
                 } catch (error) {
-                    return reject(error);
+                    reject(error);
+                    this.checkPromise = null;
+                    return this.checkPromise;
                 }
             }
             resolve(false);
