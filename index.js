@@ -27,7 +27,6 @@ function init(param = {}) {
     if (param.web3) web3 = param.web3;
     else {
         if (!web3) web3 = new Web3('http://localhost:8545');
-        if (param.web3Provider) web3Provider = param.web3Provider;
         if (param.web3Provider) {
             if (param.web3Provider.startsWith('http://') || param.web3Provider.startsWith('https://')) {
                 web3.setProvider(new web3.providers.HttpProvider(param.web3Provider));
@@ -126,6 +125,24 @@ function sendERC20(param) {
     return tx;
 }
 
+/**
+ * Send transaction to network and return transaction object in async mode
+ * @param {Object} param Transaction params object
+ * @param {string} param.id optional ID of transaction for tracing
+ * @param {string} param.to tx destination
+ * @param {*} param.amount transfer amount, full/all can be accepted
+ * @param {string} param.msgData default 0x (empty value)
+ * @param {*} param.gasPrice if null using startGasPrice, "auto" for RPC value
+ * @param {Number} param.gasEstimate
+ * @param {*} param.nonce pending, latest can be accepted
+ * @param {string} param.privateKey 0x...
+ * @param {string} param.senderAddress 0x... Be careful inside there is no check for correspondence of the private key to the account!!!
+ * @param {string} param.chain  (ropsten/mainnet or chain short name from https://chainid.network/) default mainnet or defaultChain before passed
+ * @param {Account} param.account account object in proprietary format (https://www.npmjs.com/package/eth_account)
+ * @param {Number} param.boostInterval boost interval in seconds, default 0 (auto forcing disabled)
+ * @param {Boolean} param.retryFailedTx resend transaction refused by RPC, default false.
+ * @returns {object} transaction object
+ */
 async function sendTxAsync(param) {
     init();
     let tx = new Transaction(param);
@@ -349,7 +366,14 @@ class Transaction {
                 .on('error', error => {
                     this.errors.push(error);
                     console.error('tx id:', this.txData.id, error.message ?? error, '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
-                    if (this.txData.retryFailedTx) setTimeout(sendTonode, 10000); //lock control protect from boosting during retry
+                    if (this.txData.retryFailedTx 
+                        && !error.message.includes('known transaction') 
+                        && !error.message.includes('nonce too low') 
+                        && !error.message.includes('replacement transaction underpriced')
+                        && !error.message.includes('Transaction with the same hash was already imported.')
+                        && !error.message.includes('already known')) {
+                        setTimeout(sendTonode, 10000); //lock control protect from boosting during retry but will be boost after unlock
+                    }
                     else {
                         if (calcHashAnyway) this.hash.push(txHash);
                         lock.unlock();
@@ -529,6 +553,12 @@ class Transaction {
         });
     }
 
+    /**
+     * send ERC20 token transaction to the network
+     * @param {String} token token address
+     * @param {String} to recipient address 
+     * @param {*} amount amount of tokens to send 
+     */
     sendERC20 = async (token, to, amount) => {
         let lock = await this.lockControl();
 
@@ -542,6 +572,14 @@ class Transaction {
         this.send();
         lock.unlock();
         if (this.txData.boostInterval > 0) this.boosting();
+    }
+
+    /**
+     * change gas price of the transaction
+     * @param {Number} gasPrice new gas price in gwei
+     */
+    setGasPrice = (gasPrice) => {
+        this.txData.gasPrice = gasPrice;
     }
 }
 
