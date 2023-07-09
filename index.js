@@ -336,6 +336,7 @@ class Transaction {
         switch (cahinName) {
             case 'mainnet': chainID = 1; break;
             case 'goerli': chainID = 5; break;
+            case 'sepolia': chainID = 11155111; break;
             default:
                 chains.forEach(element => {
                     if (element.shortName == this.txData.chain) {

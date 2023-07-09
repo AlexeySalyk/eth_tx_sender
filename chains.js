@@ -2248,5 +2248,22 @@ module.exports = [
         "faucets": [],
         "explorers": [],
         "infoURL": "https://testnet.wanscan.org"
+    },
+    {
+        "name": "Sepolia",
+        "chainId": 11155111,
+        "shortName": "sep",
+        "chain": "ETH",
+        "network": "mainnet",
+        "networkId": 11155111,
+        "nativeCurrency": { "name": "Sepolia Ether", "symbol": "SEP", "decimals": 18 },
+        "rpc": ["https://rpc.sepolia.org", "https://rpc2.sepolia.org", "https://rpc-sepolia.rockx.com"],
+        "faucets": ["http://fauceth.komputing.org?chain=11155111&address=${ADDRESS}"],
+        "explorers": [
+            { "name": "etherscan-sepolia", "url": "https://sepolia.etherscan.io", "standard": "EIP3091" },
+            { "name": "otterscan-sepolia", "url": "https://sepolia.otterscan.io", "standard": "EIP3091" }
+        ],
+        "infoURL": "https://sepolia.otterscan.io",
+        "title": "Ethereum Testnet Sepolia",
     }
 ]
