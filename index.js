@@ -344,7 +344,7 @@ class Transaction {
             ...rawTx,
         }
         rawTxLog.value = web3.utils.fromWei(rawTxLog.value);
-        log('sending tx id:', rawTxLog);
+        log('sending tx:', rawTxLog);
 
         //chain
         let chainID = 0;
@@ -378,11 +378,11 @@ class Transaction {
         // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
         let sendTonode = () => {
             let txHash = web3.utils.sha3('0x' + serializedTx.toString('hex')); // tx hash calculation in advance
-            log('sending to RPC => id:', this.txData.id, ' hash:', txHash);
+            log('sending to RPC => id:', chalk.cyan(this.txData.id), 'hash:', txHash);
             web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'))
                 .on('error', error => {
                     this.errors.push(error);
-                    logError('tx id:', this.txData.id, error.message ?? error, '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+                    logError('tx id:', chalk.cyan(this.txData.id), (error.message ? chalk.red(error.message) : error), '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
                     if (this.txData.retryFailedTx
                         && !error.message.includes('known transaction')
                         && !error.message.includes('nonce too low')
@@ -401,7 +401,7 @@ class Transaction {
                     lock.unlock();
                 })
                 .once('receipt', receipt => {
-                    log('tx id:', this.txData.id, 'sending done');
+                    log('tx id:', chalk.cyan(this.txData.id), 'sending done');
                     if (!this.hash.includes(receipt.transactionHash)) this.hash.push(receipt.transactionHash);
                     if (this.boostTimeout) clearTimeout(boostTimeout);
                     lock.unlock();
@@ -425,7 +425,7 @@ class Transaction {
                 this.checkPromise = null;
                 return;
             }
-            log('check tx id:', this.txData.id);
+            log('check tx id:', chalk.cyan(this.txData.id));
             for (let i = (this.hash.length - 1); i >= 0; i--) {
                 try {
                     let res = await checkTxHash(this.hash[i]);
@@ -465,7 +465,7 @@ class Transaction {
         this.txData.gasEstimate = 21000;
         this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
         this.send();
-        log('tx', this.txData.id, chalk.red('canceled'), 'hash', this.hash);
+        log('tx', chalk.cyan(this.txData.id), chalk.red('canceled'), 'hash', this.hash);
 
         lock.unlock();
     }
@@ -485,7 +485,7 @@ class Transaction {
                 let nonce = await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest');
                 if (nonce > this.txData.nonce) reject('tx nonce is incorrect is lower than the current nonce');
                 else if (nonce == this.txData.nonce) {
-                    log(chalk.hex("#FFA500").bold('boost tx'), 'id:', this.txData.id, 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
+                    log(chalk.hex("#FFA500").bold('boost tx'), 'id:', chalk.cyan(this.txData.id), 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
                     this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
                     // check if balance is sufficent
                     let bal = await web3.eth.getBalance(this.txData.senderAddress, 'latest');
@@ -541,7 +541,7 @@ class Transaction {
                             else resolve(res);
                         },
                         rej => {
-                            log('tx id:', this.txData.id, chalk.red('monit error:'), rej);
+                            log('tx id:', chalk.cyan(this.txData.id), chalk.red('monit error:'), rej);
                             //reject(rej);
                             checkState();
                         });
