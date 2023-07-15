@@ -99,12 +99,24 @@ txSender.sendTx({
 * {Number} `boostInterval` - (optional) boost interval in seconds, default 0 (auto forcing disabled)
 * {Boolean} `retryFailedTx` - (optional) resend transaction refused by RPC, default false.
 * {Boolean} `calcHashAnyway` - (optional) calculate tx hash even if tx refused by RPC, default true.
+* {Function} `log` - (optional) log function, default console.log
+* {Function} `logError` - (optional) error log function, default console.error
 
 ### Extract web3 library
 
 ```js
 const TxSender = require('eth_tx_sender')
 let web3 = TxSender.web3()
+```
+
+### Disable logging
+
+```js
+const TxSender = require('eth_tx_sender')
+TxSender.init({
+  log: () => {},
+  logError: () => {}
+})
 ```
 
 ## License

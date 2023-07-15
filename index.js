@@ -2,6 +2,7 @@ const Web3 = require('web3');
 const Tx = require('ethereumjs-tx').Transaction;
 let Common = require('@ethereumjs/common').default;
 const chains = require('./chains');
+const chalk = require('chalk');
 
 let web3 = null;
 let defaultChain = 'mainnet';
@@ -10,6 +11,12 @@ let startGasPrice = null;
 let retryFailedTx = false;
 let boostInterval = 0;
 let calcHashAnyway = true;
+let log = function () {
+    console.log(chalk.green('txSender:'), ...arguments);
+}
+let logError = function () {
+    console.error(chalk.red('txSender:'), ...arguments);
+}
 
 /**
  * Initialize Transaction sender
@@ -22,6 +29,8 @@ let calcHashAnyway = true;
  * @param {Number} param.boostInterval boost interval in seconds, default 0 (auto forcing disabled)
  * @param {Boolean} param.retryFailedTx resend transaction refused by RPC, default false.
  * @param {Boolean} param.calcHashAnyway calculate tx hash even if tx refused by RPC, default true.
+ * @param {Function} param.log function for logging, default console.log
+ * @param {Function} param.logError function for logging errors, default console.error
  */
 function init(param = {}) {
     if (param.web3) web3 = param.web3;
@@ -46,15 +55,15 @@ function init(param = {}) {
                 web3.setProvider(provider);
 
                 provider.on('error', e => {
-                    console.log('\nWS Error', e);
+                    logError('\nWS Error', e);
                 });
                 provider.on('end', e => {
-                    console.log('\nWS closed');
+                    log('\nWS closed');
                 });
                 provider.on('connect', function () {
-                    console.log('\nWSS connected');
-                    web3.eth.isSyncing().then((res) => { console.log("isSyncing:", res); });
-                    web3.eth.getBlockNumber().then((res) => { console.log("lastBlock:", res) });
+                    log('\nWSS connected');
+                    web3.eth.isSyncing().then((res) => { log("isSyncing:", res); });
+                    web3.eth.getBlockNumber().then((res) => { log("lastBlock:", res) });
                 });
             }
         }
@@ -66,6 +75,8 @@ function init(param = {}) {
     if (param.boostInterval) boostInterval = param.boostInterval;
     if (param.retryFailedTx) retryFailedTx = param.retryFailedTx;
     if (param.calcHashAnyway != undefined) calcHashAnyway = param.calcHashAnyway;
+    if (param.log) log = param.log;
+    if (param.logError) logError = param.logError;
 }
 
 function checkWeb3Initialization() {
@@ -300,7 +311,7 @@ class Transaction {
                 data: this.txData.msgData
             }).then(
                 res => { this.txData.gasEstimate = res; },
-                err => { console.error('calc gas error:\n' + err + '\ntry to calc without gasPrice...'); }
+                err => { logError('calc gas error:\n' + err + '\ntry to calc without gasPrice...'); }
             );
 
             if (!gasCalcOk) {
@@ -328,7 +339,12 @@ class Transaction {
             gasLimit: this.txData.gasEstimate
         }
 
-        console.log('sending tx id:' + this.txData.id, rawTx, 'amount:', web3.utils.fromWei(rawTx.value));
+        let rawTxLog = {
+            id: this.txData.id,
+            ...rawTx,
+        }
+        rawTxLog.value = web3.utils.fromWei(rawTxLog.value);
+        log('sending tx id:', rawTxLog);
 
         //chain
         let chainID = 0;
@@ -362,14 +378,14 @@ class Transaction {
         // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
         let sendTonode = () => {
             let txHash = web3.utils.sha3('0x' + serializedTx.toString('hex')); // tx hash calculation in advance
-            console.log('sending to RPC => id:', this.txData.id, ' hash:', txHash);
+            log('sending to RPC => id:', this.txData.id, ' hash:', txHash);
             web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'))
                 .on('error', error => {
                     this.errors.push(error);
-                    console.error('tx id:', this.txData.id, error.message ?? error, '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
-                    if (this.txData.retryFailedTx 
-                        && !error.message.includes('known transaction') 
-                        && !error.message.includes('nonce too low') 
+                    logError('tx id:', this.txData.id, error.message ?? error, '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+                    if (this.txData.retryFailedTx
+                        && !error.message.includes('known transaction')
+                        && !error.message.includes('nonce too low')
                         && !error.message.includes('replacement transaction underpriced')
                         && !error.message.includes('Transaction with the same hash was already imported.')
                         && !error.message.includes('already known')) {
@@ -385,7 +401,7 @@ class Transaction {
                     lock.unlock();
                 })
                 .once('receipt', receipt => {
-                    console.log('tx id:', this.txData.id, 'sending done');
+                    log('tx id:', this.txData.id, 'sending done');
                     if (!this.hash.includes(receipt.transactionHash)) this.hash.push(receipt.transactionHash);
                     if (this.boostTimeout) clearTimeout(boostTimeout);
                     lock.unlock();
@@ -409,12 +425,12 @@ class Transaction {
                 this.checkPromise = null;
                 return;
             }
-            console.log('checking tx id:', this.txData.id);
+            log('check tx id:', this.txData.id);
             for (let i = (this.hash.length - 1); i >= 0; i--) {
                 try {
                     let res = await checkTxHash(this.hash[i]);
                     if (res) {
-                        console.log(i, this.hash[i], res.result);
+                        log(i, this.hash[i], res.result == 'mined' ? chalk.green('mined') : res.result);
                         if (res.result == 'mined') {
                             resolve(res);
                             this.checkPromise = null;
@@ -449,7 +465,7 @@ class Transaction {
         this.txData.gasEstimate = 21000;
         this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
         this.send();
-        console.log('tx', this.txData.id, 'canceled', 'hash', this.hash);
+        log('tx', this.txData.id, chalk.red('canceled'), 'hash', this.hash);
 
         lock.unlock();
     }
@@ -469,21 +485,20 @@ class Transaction {
                 let nonce = await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest');
                 if (nonce > this.txData.nonce) reject('tx nonce is incorrect is lower than the current nonce');
                 else if (nonce == this.txData.nonce) {
-                    console.log('boost tx id:', this.txData.id, 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
+                    log(chalk.hex("#FFA500").bold('boost tx'), 'id:', this.txData.id, 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
                     this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
                     // check if balance is sufficent
                     let bal = await web3.eth.getBalance(this.txData.senderAddress, 'latest');
                     let fullAmount = this.txData.amount.add(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)));
                     if (fullAmount.gt(web3.utils.toBN(bal))) {
-                        //toDo optional
-                        console.log('ATTENTION the transaction amount will be reduced!!!');
+                        log(chalk.red('ATTENTION the transaction amount will be reduced!!!'));
                         this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate))));
                     }
                     this.send();
                 }
                 resolve('boosted');
             } catch (error) {
-                console.error('boost error', error);
+                logError('boost error', error);
                 reject('boost error', error);
             }
 
@@ -504,7 +519,7 @@ class Transaction {
                 try {
                     boostRes = await this.boost();
                 } catch (error) {
-                    console.error(this?.txData?.id, 'boosting error:', error);
+                    logError(this?.txData?.id, 'boosting error:', error);
                 }
                 if (boostRes != 'mined') this.boosting();
             }, this.txData.boostInterval * 1000);
@@ -526,7 +541,7 @@ class Transaction {
                             else resolve(res);
                         },
                         rej => {
-                            console.log('tx id:', this.txData.id, 'monit error:', rej);
+                            log('tx id:', this.txData.id, chalk.red('monit error:'), rej);
                             //reject(rej);
                             checkState();
                         });
@@ -569,7 +584,7 @@ class Transaction {
         this.txData.to = token;
         this.txData.msgData = "0xa9059cbb" + "000000000000000000000000" + to.slice(2) + amount.slice(2);
         this.txData.amount = 0;
-        console.log(token, 'ERC20 transfer, from 0x' + this.txData.senderAddress, 'to:', to, 'amount:', web3.utils.fromWei(amount));
+        log(token, 'ERC20 transfer, from 0x' + this.txData.senderAddress, 'to:', to, 'amount:', web3.utils.fromWei(amount));
         this.send();
         lock.unlock();
         if (this.txData.boostInterval > 0) this.boosting();
