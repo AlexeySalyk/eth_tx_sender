@@ -67,6 +67,8 @@ function init(param = {}) {
                 });
             }
         }
+        web3.eth.transactionPollingInterval = 5000;
+        web3.eth.transactionPollingTimeout = 30;
     }
 
     if (param.chain) defaultChain = param.chain;
@@ -382,7 +384,8 @@ class Transaction {
             web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'))
                 .on('error', error => {
                     this.errors.push(error);
-                    logError('tx id:', chalk.cyan(this.txData.id), (error.message ? chalk.red(error.message) : error), '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+                    if (error?.message?.includes('Transaction was not mined within')) log(`tx id: ${chalk.cyan(this.txData.id)} web3js poling stopped by timeout ${web3.eth.transactionPollingTimeout} sec. | sender: ${this.txData.senderAddress} nonce:`, this.txData.nonce);
+                    else logError('tx id:', chalk.cyan(this.txData.id), (error.message ? chalk.red(error.message) : error), '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
                     if (this.txData.retryFailedTx
                         && !error.message.includes('known transaction')
                         && !error.message.includes('nonce too low')
