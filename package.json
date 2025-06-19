@@ -1,6 +1,6 @@
 {
   "name": "eth_tx_sender",
-  "version": "1.0.0",
+  "version": "1.0.0-alpha",
   "description": "utility for automating the sending of transactions to the Ethereum blockchain, with the possibility of subsequent modification and tracking the status, without time limit",
   "main": "index.js",
   "scripts": {

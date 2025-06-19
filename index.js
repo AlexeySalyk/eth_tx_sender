@@ -11,11 +11,15 @@ let startGasPrice = null;
 let retryFailedTx = false;
 let boostInterval = 0;
 let calcHashAnyway = true;
-let log = function () {
+
+const log = function () {
     console.log(chalk.green('txSender:'), ...arguments);
 }
-let logError = function () {
+const logError = function () {
     console.error(chalk.red('txSender:'), ...arguments);
+}
+const sleep = function (ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -33,6 +37,7 @@ let logError = function () {
  * @param {Function} param.logError function for logging errors, default console.error
  */
 function init(param = {}) {
+    if (web3) return; 
     if (param.web3) web3 = param.web3;
     else {
         if (!web3) web3 = new Web3('http://localhost:8545');
@@ -109,8 +114,43 @@ function sendTx(param) {
     let tx = new Transaction(param);
     tx.send().then(() => {
         if (tx.txData.boostInterval > 0) tx.boosting();
+    }, err => {
+        logError(err);
+    }).catch(err => {
+        logError(err);
     });
     return tx;
+}
+
+/**
+ * Send ethereum transaction with minimal data
+    * @param {Object} param Transaction params object
+    * @param {string} param.id optional ID of transaction for tracing
+    * @param {string} param.to tx destination 
+    * @param {*} param.amount transfer amount, full/all can be accepted
+    * @param {string} param.msgData default 0x (empty value)
+    * @param {*} param.gasPrice if null using startGasPrice, "auto" for RPC value 
+    * @param {Number} param.gasEstimate
+    * @param {*} param.nonce pending, latest can be accepted
+    * @param {string} param.privateKey 0x...
+    * @param {string} param.senderAddress 0x... Be careful inside there is no check for correspondence of the private key to the account!!!
+    * @param {string} param.chain  (ropsten/mainnet or chain short name from https://chainid.network/) default mainnet or defaultChain before passed
+    * @param {Account} param.account account object in proprietary format (https://www.npmjs.com/package/eth_account)
+    * @param {Number} param.boostInterval boost interval in seconds, default 0 (auto forcing disabled)
+    * @param {Boolean} param.retryFailedTx resend transaction refused by RPC, default false.    
+    * @returns {Promise} Promise with transaction object
+ */
+async function sendTxAsync(param) {
+    init();
+    let tx = new Transaction(param);
+    return tx.send().then(() => {
+        if (tx.txData.boostInterval > 0) tx.boosting();
+        return tx;
+    });
+}
+
+async function sendTxAndWait(param) {
+    return (await sendTxAsync(param)).wait();
 }
 
 /**
@@ -131,36 +171,10 @@ function sendTx(param) {
     * @param {Boolean} param.retryFailedTx resend transaction refused by RPC, default false.
     * @returns {object} transaction object
  */
-function sendERC20(param) {
+async function sendERC20(param) {
     init();
     let tx = new Transaction(param);
-    tx.sendERC20(param.token, param.to, param.amount);
-    return tx;
-}
-
-/**
- * Send transaction to network and return transaction object in async mode
- * @param {Object} param Transaction params object
- * @param {string} param.id optional ID of transaction for tracing
- * @param {string} param.to tx destination
- * @param {*} param.amount transfer amount, full/all can be accepted
- * @param {string} param.msgData default 0x (empty value)
- * @param {*} param.gasPrice if null using startGasPrice, "auto" for RPC value
- * @param {Number} param.gasEstimate
- * @param {*} param.nonce pending, latest can be accepted
- * @param {string} param.privateKey 0x...
- * @param {string} param.senderAddress 0x... Be careful inside there is no check for correspondence of the private key to the account!!!
- * @param {string} param.chain  (ropsten/mainnet or chain short name from https://chainid.network/) default mainnet or defaultChain before passed
- * @param {Account} param.account account object in proprietary format (https://www.npmjs.com/package/eth_account)
- * @param {Number} param.boostInterval boost interval in seconds, default 0 (auto forcing disabled)
- * @param {Boolean} param.retryFailedTx resend transaction refused by RPC, default false.
- * @returns {object} transaction object
- */
-async function sendTxAsync(param) {
-    init();
-    let tx = new Transaction(param);
-    await tx.send();
-    if (tx.txData.boostInterval > 0) tx.boosting();
+    await tx.sendERC20(param.token, param.to, param.amount);
     return tx;
 }
 
@@ -221,7 +235,8 @@ class Transaction {
 
     hash = [];
     errors = [];
-    boostTimeout = null;
+    _boostTimeout = null;
+    sendTonodePromise = null;
 
     /**
     * Create new transaction
@@ -296,122 +311,159 @@ class Transaction {
      * Send transaction to network
      */
     send = async function () {
+        this.sendTonodePromise = new Promise(async (resolve, reject) => {
 
-        let lock = await this.lockControl();
-        if (!Number.isInteger(this.txData.gasPrice) || this.txData.gasPrice == 'auto') await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
-        if (this.txData.nonce == 'latest') await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest').then(txQty => { this.txData.nonce = txQty; });
-        else if (this.txData.nonce == 'pending') await web3.eth.getTransactionCount(this.txData.senderAddress, 'pending').then(txQty => { this.txData.nonce = txQty; });
-        //if (!this.txData.chain) await web3.eth.net.getNetworkType().then(name => { if (name != 'main') this.txData.chain = name; });
-        //Gas calc
-        if (this.txData.amount != 'all' && this.txData.amount != 'full' && !web3.utils.isBigNumber(this.txData.amount)) this.txData.amount = web3.utils.toBN(this.txData.amount); //before gas calc
-        if (!this.txData.gasEstimate) {
-            let gasCalcOk = await web3.eth.estimateGas({
-                from: this.txData.senderAddress,
-                to: this.txData.to,
-                value: (this.txData.amount == 'all' || this.txData.amount == 'full') ? 0 : this.txData.amount,
-                gasPrice: this.txData.gasPrice,
-                data: this.txData.msgData
-            }).then(
-                res => { this.txData.gasEstimate = res; },
-                err => { logError('calc gas error:\n' + err + '\ntry to calc without gasPrice...'); }
-            );
-
-            if (!gasCalcOk) {
-                await web3.eth.estimateGas({
+            let lock = await this.lockControl();
+            if (!Number.isInteger(this.txData.gasPrice) || this.txData.gasPrice == 'auto') await web3.eth.getGasPrice().then(res => { this.txData.gasPrice = (res - -1); });
+            if (this.txData.nonce == 'latest') await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest').then(txQty => { this.txData.nonce = txQty; });
+            else if (this.txData.nonce == 'pending') await web3.eth.getTransactionCount(this.txData.senderAddress, 'pending').then(txQty => { this.txData.nonce = txQty; });
+            //if (!this.txData.chain) await web3.eth.net.getNetworkType().then(name => { if (name != 'main') this.txData.chain = name; });
+            //Gas calc
+            if (this.txData.amount != 'all' && this.txData.amount != 'full' && !web3.utils.isBigNumber(this.txData.amount)) this.txData.amount = web3.utils.toBN(this.txData.amount); //before gas calc
+            if (!this.txData.gasEstimate) {
+                let gasCalcOk = await web3.eth.estimateGas({
                     from: this.txData.senderAddress,
                     to: this.txData.to,
                     value: (this.txData.amount == 'all' || this.txData.amount == 'full') ? 0 : this.txData.amount,
+                    gasPrice: this.txData.gasPrice,
                     data: this.txData.msgData
                 }).then(
                     res => { this.txData.gasEstimate = res; },
-                    err => { throw new Error("error in gas calc: " + err); }
+                    err => { logError('calc gas error:\n' + err + '\ntry to calc without gasPrice...'); }
                 );
-            }
-        }
-        if (this.txData.amount == 'all' || this.txData.amount == 'full') await web3.eth.getBalance(this.txData.senderAddress, 'latest').then(bal => { this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)))) });
 
-
-
-        let rawTx = {
-            nonce: this.txData.nonce,
-            to: this.txData.to,
-            data: this.txData.msgData,
-            value: this.txData.amount,
-            gasPrice: this.txData.gasPrice,
-            gasLimit: this.txData.gasEstimate
-        }
-
-        let rawTxLog = {
-            id: this.txData.id,
-            ...rawTx,
-        }
-        rawTxLog.value = web3.utils.fromWei(rawTxLog.value);
-        log('sending tx:', rawTxLog);
-
-        //chain
-        let chainID = 0;
-        let cahinName = this.txData.chain ?? defaultChain;
-        switch (cahinName) {
-            case 'mainnet': chainID = 1; break;
-            case 'goerli': chainID = 5; break;
-            case 'sepolia': chainID = 11155111; break;
-            default:
-                chains.forEach(element => {
-                    if (element.shortName == this.txData.chain) {
-                        chainID = element.chainId;
-                        //network = element.network;
+                if (!gasCalcOk) {
+                    while (!gasCalcOk) {
+                        await web3.eth.estimateGas({
+                            from: this.txData.senderAddress,
+                            to: this.txData.to,
+                            value: (this.txData.amount == 'all' || this.txData.amount == 'full') ? 0 : this.txData.amount,
+                            data: this.txData.msgData
+                        }).then(
+                            res => {
+                                this.txData.gasEstimate = res;
+                                gasCalcOk = true;
+                            },
+                            async err => {
+                                logError("error in gas calc: " + err);
+                                await sleep(3000);
+                            }
+                        );
                     }
-                });
-                if (chainID == 0) {
-                    if (Number.isInteger(cahinName)) chainID = cahinName;
-                    else throw new Error('chain not found');
                 }
-                break;
-        }
+            }
+            if (this.txData.amount == 'all' || this.txData.amount == 'full') await web3.eth.getBalance(this.txData.senderAddress, 'latest').then(bal => { this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate)))) });
 
-        var common = Common.forCustomChain('mainnet', { chainId: chainID });
-        let tx = new Tx(rawTx, { common });
 
-        let _privateKey = Buffer.from(this.txData.privateKey.slice(2), 'hex');
-        tx.sign(_privateKey);
-        let serializedTx = tx.serialize();
 
-        // If the transaction has not been mined within 750 seconds (default timeout), an error is returned: 
-        // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
-        let sendTonode = () => {
-            let txHash = web3.utils.sha3('0x' + serializedTx.toString('hex')); // tx hash calculation in advance
-            log('sending to RPC => id:', chalk.cyan(this.txData.id), 'hash:', txHash);
-            web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'))
-                .on('error', error => {
-                    this.errors.push(error);
-                    if (error?.message?.includes('Transaction was not mined within')) log(`tx id: ${chalk.cyan(this.txData.id)} web3js poling stopped by timeout ${web3.eth.transactionPollingTimeout} sec. | sender: ${this.txData.senderAddress} nonce:`, this.txData.nonce);
-                    else logError('tx id:', chalk.cyan(this.txData.id), (error.message ? chalk.red(error.message) : error), '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+            let rawTx = {
+                nonce: this.txData.nonce,
+                to: this.txData.to,
+                data: this.txData.msgData,
+                value: this.txData.amount,
+                gasPrice: this.txData.gasPrice,
+                gasLimit: this.txData.gasEstimate
+            }
+
+            let rawTxLog = {
+                id: this.txData.id,
+                ...rawTx,
+            }
+            rawTxLog.value = web3.utils.fromWei(rawTxLog.value);
+            log('sending tx:', rawTxLog);
+
+            //chain
+            let chainID = 0;
+            let cahinName = this.txData.chain ?? defaultChain;
+            switch (cahinName) {
+                case 'mainnet': chainID = 1; break;
+                case 'goerli': chainID = 5; break;
+                case 'sepolia': chainID = 11155111; break;
+                default:
+                    chains.forEach(element => {
+                        if (element.shortName == this.txData.chain || element.name == this.txData.chain) {
+                            chainID = element.chainId;
+                            //network = element.network;
+                        }
+                    });
+                    if (chainID == 0) {
+                        if (Number.isInteger(cahinName)) chainID = cahinName;
+                        else throw new Error('chain not found');
+                    }
+                    break;
+            }
+
+            var common = Common.forCustomChain('mainnet', { chainId: chainID });
+            let tx = new Tx(rawTx, { common });
+
+            let _privateKey = Buffer.from(this.txData.privateKey.slice(2), 'hex');
+            tx.sign(_privateKey);
+            let serializedTx = tx.serialize();
+
+            let errorOnSendToNode = (error, txHash) => {
+                this.errors.push(error);
+                if (error?.message?.includes('Transaction was not mined within')) log(`tx id: ${chalk.cyan(this.txData.id)} web3js poling stopped by timeout ${web3.eth.transactionPollingTimeout} sec. | sender: ${this.txData.senderAddress} nonce:`, this.txData.nonce);
+                else logError('tx id:', chalk.cyan(this.txData.id), (error.message ? chalk.red(error.message) : error), '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce);
+                return new Promise((resolve, reject) => {
                     if (this.txData.retryFailedTx
                         && !error.message.includes('known transaction')
                         && !error.message.includes('nonce too low')
                         && !error.message.includes('replacement transaction underpriced')
                         && !error.message.includes('Transaction with the same hash was already imported.')
                         && !error.message.includes('already known')) {
-                        setTimeout(sendTonode, 10000); //lock control protect from boosting during retry but will be boost after unlock
+                        setTimeout(() => {
+                            sendTonode.then(res => {
+                                lock.unlock();
+                                resolve(res);
+                            }).catch(rej => {
+                                lock.unlock();
+                                reject(rej);
+                            })
+                        }, 10000); //lock control protect from boosting during retry but will be boost after unlock
                     }
                     else {
                         if (calcHashAnyway) this.hash.push(txHash);
                         lock.unlock();
+                        reject(error);
                     }
                 })
-                .once('transactionHash', hash => {
-                    this.hash.push(hash);
-                    lock.unlock();
-                })
-                .once('receipt', receipt => {
-                    log('tx id:', chalk.cyan(this.txData.id), 'sending done');
-                    if (!this.hash.includes(receipt.transactionHash)) this.hash.push(receipt.transactionHash);
-                    if (this.boostTimeout) clearTimeout(boostTimeout);
-                    lock.unlock();
-                });//.catch((error) => console.error('tx id catched error:', this.txData.id, error.message ?? error, '| sender:', this.txData.senderAddress, 'nonce:', this.txData.nonce));
-            //.on('confirmation', (confNum, rec) => { console.log('receipt tx', rec.transactionHash, " num of confirmations", confNum) })
-        }
-        sendTonode();
+            }
+            // If the transaction has not been mined within 750 seconds (default timeout), an error is returned: 
+            // Transaction was not mined within 750 seconds, please make sure your transaction was properly sent. Be aware that it might still be mined!
+            let sendTonode = () => {
+                let txHash = web3.utils.sha3('0x' + serializedTx.toString('hex')); // tx hash calculation in advance
+                log('sending to RPC => id:', chalk.cyan(this.txData.id), 'hash:', txHash);
+
+                return new Promise((resolve, reject) => {
+                    web3.eth.sendSignedTransaction('0x' + serializedTx.toString('hex'))
+                        .on('error', error => {
+                            errorOnSendToNode(error, txHash).then(res => { resolve(res) }).catch(rej => { reject(rej) });
+                        })
+                        .once('transactionHash', hash => {
+                            this.hash.push(hash);
+                            lock.unlock();
+                            resolve(hash);
+                        })
+                        .once('receipt', receipt => {
+                            log('tx id:', chalk.cyan(this.txData.id), 'sending done');
+                            if (!this.hash.includes(receipt.transactionHash)) this.hash.push(receipt.transactionHash);
+                            if (this._boostTimeout) clearTimeout(_boostTimeout);
+                            resolve(receipt);
+                            lock.unlock();
+                        })
+                        .catch(error => {
+                            errorOnSendToNode(error, txHash).then(res => { resolve(res) }).catch(rej => { reject(rej) });
+                        });
+                });
+            }
+            sendTonode().then(res => {
+                resolve(res);
+            }).catch(rej => {
+                reject(rej);
+            });
+        });
+
+        return this.sendTonodePromise;
     }
 
     /**
@@ -481,12 +533,16 @@ class Transaction {
         return new Promise(async (resolve, reject) => {
             //if (!this.hash.length) return reject('tx not yet created');
             let lock = await this.lockControl();  // for not concurrent boosting
+            let lastGasPrice = this.txData.gasPrice;
             try {
                 let mined = await this.check();
                 if (mined) return resolve('mined');
 
                 let nonce = await web3.eth.getTransactionCount(this.txData.senderAddress, 'latest');
                 if (nonce > this.txData.nonce) reject('tx nonce is incorrect is lower than the current nonce');
+                // else if (___) { не бустим гаспрайс если надо ToDo
+
+                // }
                 else if (nonce == this.txData.nonce) {
                     log(chalk.hex("#FFA500").bold('boost tx'), 'id:', chalk.cyan(this.txData.id), 'hash:', this.hash[this.hash.length - 1] ?? 'not yet created');
                     this.txData.gasPrice += Math.floor(this.txData.gasPrice / 100 * gasPriceStep);
@@ -497,10 +553,12 @@ class Transaction {
                         log(chalk.red('ATTENTION the transaction amount will be reduced!!!'));
                         this.txData.amount = (web3.utils.toBN(bal).sub(web3.utils.toBN(this.txData.gasPrice).mul(web3.utils.toBN(this.txData.gasEstimate))));
                     }
-                    this.send();
+                    lock.unlock();
+                    await this.send();
                 }
                 resolve('boosted');
             } catch (error) {
+                this.txData.gasPrice = lastGasPrice;
                 logError('boost error', error);
                 reject('boost error', error);
             }
@@ -517,7 +575,7 @@ class Transaction {
     boosting = async (interval = 0) => {
         if (interval) this.txData.boostInterval = interval;
         if (this.txData.boostInterval > 0) {
-            this.boostTimeout = setTimeout(async () => {
+            this._boostTimeout = setTimeout(async () => {
                 let boostRes;
                 try {
                     boostRes = await this.boost();
@@ -535,7 +593,9 @@ class Transaction {
      * @returns {Promise} waits until tx will be mined and returns the transaction result or promise reject in case of incident
      */
     wait = async function (interval = 15) {
-        return new Promise((resolve, reject) => {
+
+        return new Promise(async (resolve, reject) => {
+            await this.sendTonodePromise;
             let checkState = async () => {
                 setTimeout(() => {
                     this.check().then(
@@ -609,6 +669,7 @@ module.exports = {
     web3: () => { return web3; },
     sendTx: sendTx,
     sendTxAsync: sendTxAsync,
+    sendTxAndWait: sendTxAndWait,
     sendERC20: sendERC20,
     checkHash: checkTxHash,
 };
