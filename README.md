@@ -14,15 +14,22 @@ npm install eth_tx_sender
 
 ### Simle usage (using default RPC setings)
 
+Just send the transaction and go ahead (without waiting the result).  
+If during the tx sending the transaction is refused by the node, or there will be an internal error, it will be ignored and your code won't be thrown.  
+Returns tx object with all the functions inside.
 ```js
 const txSender = require('eth_tx_sender')
-
+ 
 txSender.sendTx({
   to: '0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',
   amount: 'full',
   privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
 })
-//or with promise return
+```
+
+you can also wait for the result via Promise
+
+```js
 txSender
   .sendTx({
     to: '0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',
@@ -30,9 +37,11 @@ txSender
     privateKey: '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
   })
   .wait()
-  .then(console.log, console.log)
+  .then(console.log, console.error);
+```
 
-//ERC20 transfer
+or send ERC20 transfer (the same logic)
+```js
 TxSender.sendERC20({
   to: '0xAC35682eF3eCecF0662d245D5a2429CB7C57bA5B',
   amount: 'full',
@@ -40,6 +49,8 @@ TxSender.sendERC20({
   token: '0xdac17f958d2ee523a2206206994597c13d831ec7' //USDT
 })
 ```
+
+In case of using .wait() method it returns a Promise which will be resolved after the transaction is mined, it also includes an internal "sendToNodePromise" promise which will be resolved after the transaction is sent to the node to catching internal errors.
 
 ### Specify RPC settings
 
@@ -102,7 +113,7 @@ txSender.sendTx({
 * {Function} `log` - (optional) log function, default console.log
 * {Function} `logError` - (optional) error log function, default console.error
 
-### Extract web3 library
+### Extract a web3 library
 
 ```js
 const TxSender = require('eth_tx_sender')
